@@ -97,38 +97,30 @@ raise a GitHub issue or open a pull request with a fix.
 
 ### 第四步：测试实现 (Step 4: Test Your Implementation)
 
-1. **运行所有测试** (Run all tests)
+**运行测试** (Run tests)
 
-   ```bash
-   uv run pytest
-   ```
+```bash
+# 1. 激活虚拟环境
+source .venv/bin/activate
 
-2. **运行特定测试文件** (Run specific test files)
+# 2. 运行所有测试
+pytest
 
-   ```bash
-   # SFT相关测试
-   uv run pytest tests/test_sft.py -v
-   
-   # GRPO相关测试
-   uv run pytest tests/test_grpo.py -v
-   
-   # DPO相关测试
-   uv run pytest tests/test_dpo.py -v
-   
-   # 指标相关测试
-   uv run pytest tests/test_metrics.py -v
-   
-   # 数据相关测试
-   uv run pytest tests/test_data.py -v
-   ```
+# 3. 运行特定测试文件
+pytest tests/test_sft.py -v
+pytest tests/test_grpo.py -v
+pytest tests/test_dpo.py -v
+pytest tests/test_metrics.py -v
+pytest tests/test_data.py -v
 
-3. **运行单个测试** (Run a single test)
+# 4. 运行单个测试
+pytest tests/test_sft.py::test_tokenize_prompt_and_output -v
 
-   ```bash
-   uv run pytest tests/test_sft.py::test_tokenize_prompt_and_output -v
-   ```
+# 5. 查看详细输出
+pytest -v -s
+```
 
-4. **查看详细输出** (View detailed output)
+**注意**：不要使用 `uv run pytest`，因为 `uv run` 会重新同步依赖并可能安装不兼容的 PyTorch 版本。请始终先激活虚拟环境，然后直接运行 `pytest`。
 
    ```bash
    # 显示更详细的输出
@@ -193,6 +185,74 @@ raise a GitHub issue or open a pull request with a fix.
 1. **依赖安装问题** (Dependency installation issues)
    - 如果 `flash-attn` 安装失败，检查CUDA版本兼容性
    - 确保Python版本在3.11-3.12之间
+   
+   **CUDA版本不匹配错误** (CUDA version mismatch error)
+   
+   如果遇到以下错误：
+   ```
+   ImportError: undefined symbol: __nvJitLinkComplete_12_4, version libnvJitLink.so.12
+   ```
+   
+   这通常是因为系统CUDA版本与PyTorch安装的CUDA库版本不匹配。
+   
+   **快速修复** (Quick fix):
+   ```bash
+   # 运行自动修复脚本（推荐）
+   bash fix_cuda_mismatch.sh
+   ```
+   
+   修复脚本会自动：
+   - 检测系统 CUDA 版本
+   - 卸载不兼容的 PyTorch 和 nvidia 包
+   - 安装与 CUDA 12.2 兼容的 PyTorch 2.4.1
+   - 设置必要的环境变量
+   - 安装 flash-attn
+   
+   **重要**：修复后，每次使用虚拟环境时，环境变量会自动设置（已添加到 `.venv/bin/activate`）。
+   如果手动激活虚拟环境，确保设置了：
+   ```bash
+   export LD_LIBRARY_PATH=/usr/local/cuda-12.2/lib64:${LD_LIBRARY_PATH}
+   export CUDA_HOME=/usr/local/cuda-12.2
+   ```
+   
+   手动解决方法：
+   
+   **方法1：重新安装与系统CUDA版本匹配的PyTorch** (推荐)
+   ```bash
+   # 检查系统CUDA版本
+   nvcc --version
+   
+   # 删除虚拟环境并重新创建
+   rm -rf .venv
+   
+   # 先安装与系统CUDA版本匹配的PyTorch
+   # 对于CUDA 12.2，使用以下命令：
+   uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+   
+   # 然后安装其他依赖（不包括flash-attn）
+   uv sync --no-install-package flash-attn
+   
+   # 最后尝试安装flash-attn
+   uv sync
+   ```
+   
+   **方法2：使用预编译的flash-attn wheel** (如果可用)
+   ```bash
+   # 尝试从预编译wheel安装
+   uv pip install flash-attn==2.7.4.post1 --no-build-isolation
+   ```
+   
+   **方法3：设置环境变量绕过检查** (临时方案)
+   ```bash
+   # 设置环境变量，允许符号不匹配（不推荐，可能导致运行时错误）
+   export LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
+   export CUDA_HOME=/usr/local/cuda
+   uv sync
+   ```
+   
+   如果以上方法都不行，可能需要：
+   - 更新系统CUDA到12.4或更高版本
+   - 或者使用Docker容器来保证环境一致性
 
 2. **测试失败** (Test failures)
    - 检查实现是否正确处理了边界情况

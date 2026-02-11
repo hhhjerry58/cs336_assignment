@@ -82,7 +82,9 @@ def run_compute_group_normalized_rewards(
 
 def run_compute_entropy(logits: torch.Tensor) -> torch.Tensor:
     """Get the entropy of the logits (i.e., entropy of the final dimension)."""
-    raise NotImplementedError
+    probs = torch.softmax(logits,dim=-1)
+    entropy = -torch.sum(probs * torch.log(probs), dim=-1)
+    return entropy
 
 
 def run_get_response_log_probs(
@@ -193,7 +195,11 @@ def run_masked_mean(tensor: torch.Tensor, mask: torch.Tensor, dim: int | None = 
         torch.Tensor, the mean of the tensor along the specified
             dimension, considering only the elements with mask value 1.
     """
-    raise NotImplementedError
+    tensor_masked = tensor * mask
+    if dim is None:
+        return tensor_masked.sum() / mask.sum()
+    else:
+        return tensor_masked.sum(dim=dim) / mask.sum(dim=dim)
 
 def run_sft_microbatch_train_step(
     policy_log_probs: torch.Tensor,
@@ -267,7 +273,11 @@ def run_masked_normalize(
         torch.Tensor, the normalized sum, where masked elements
             (mask=0) don't contribute to the sum.
     """
-    raise NotImplementedError
+    tensor_masked = tensor * mask
+    if dim is None:
+        return tensor_masked.sum() / normalize_constant
+    else:
+        return tensor_masked.sum(dim=dim) / normalize_constant
 
 
 """

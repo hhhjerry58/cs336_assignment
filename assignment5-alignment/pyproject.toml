@@ -3,7 +3,7 @@ name = "alignment"
 version = "1.0.0"
 description = "CS 336 Spring 2025 Assignment 5: Alignment"
 readme = "README.md"
-requires-python = ">=3.11,<3.13"  # Python 3.13 not yet supported for some deps
+requires-python = ">=3.11,<3.13"
 dependencies = [
     "accelerate>=1.5.2",
     "alpaca-eval",
@@ -13,6 +13,7 @@ dependencies = [
     "pylatexenc==2.10",
     "notebook>=7.4.2",
     "pytest>=8.3.5",
+    # 不固定 PyTorch 版本，让 vllm 选择，但通过脚本在运行时修复为兼容版本
     "torch",
     "tqdm>=4.67.1",
     "transformers>=4.50.0",
@@ -28,7 +29,6 @@ include = ["cs336_alignment"]
 [tool.uv]
 package = true
 no-build-isolation-package = ["flash-attn"]
-
 
 [tool.uv.sources]
 alpaca-eval = { git = "https://github.com/nelson-liu/alpaca_eval.git", rev = "forward_kwargs_to_vllm" }
