@@ -31,8 +31,55 @@ def run_tokenize_prompt_and_output(
             "response_mask": torch.Tensor of shape (batch_size, max(prompt_and_output_lens) - 1):
                 a mask on the response tokens in `labels`.
     """
-    raise NotImplementedError
+    batch_size = len(prompt_strs)
+    
+    tokenized_prompt = tokenizer(prompt_strs, padding=False, truncation=False, return_tensors=None, add_special_tokens=True)
+    tokenized_output = tokenizer(output_strs, padding=False, truncation=False, return_tensors=None, add_special_tokens=False)
 
+    full_ids = []
+    prompt_lengths = []
+    
+    for i in range(batch_size):
+        prompt_ids = tokenized_prompt[i]["input_ids"]
+        output_ids = tokenized_output[i]["input_ids"]
+        full_encoded_strs = prompt_ids + output_ids
+        full_ids.append(full_encoded_strs)
+        prompt_lengths.append(len(prompt_ids))
+    
+    # 找到最大长度用于padding
+    max_prompt_and_output_length = max(len(ids) for ids in full_ids)
+    
+    full_padded_ids = []
+    for ids in full_ids:
+        pad_length = max_prompt_and_output_length - len(ids)
+        padded_ids = ids + [tokenizer.pad_token_id] * pad_length
+        full_padded_ids.append(padded_ids)
+    
+    full_padded_ids = torch.tensor(full_padded_ids, dtype=torch.long)
+    
+    # input_ids: remove the last token
+    input_ids = full_padded_ids[:, :-1]
+    
+    # labels: shifted (remove the first token)
+    labels = full_padded_ids[:, 1:]
+
+    # response_mask: mark the output part (in labels)
+    response_mask = []
+    for i in range(batch_size):
+        prompt_len = prompt_lengths[i]
+        total_len = len(full_ids[i])
+        
+        mask = [0] * (prompt_len - 1) + [1] * (total_len - prompt_len) + [0] * (max_prompt_and_output_length - total_len)
+        
+        response_mask.append(mask)
+    
+    response_mask = torch.tensor(response_mask, dtype=torch.long)
+    
+    return {
+        "input_ids": input_ids,
+        "labels": labels,
+        "response_mask": response_mask
+    }
 
 def run_compute_group_normalized_rewards(
     reward_fn: Callable,
@@ -116,8 +163,20 @@ def run_get_response_log_probs(
                 we have not masked out the token indices corresponding to the prompt
                 or padding; that is done in the train loop.
     """
-    raise NotImplementedError
+    outputs = model(input_ids)
+    logits = outputs.logits # shape: (batch_size, sequence_length, vocab_size)
+    
+    all_log_probs = torch.log_softmax(logits, dim=-1)
+    labels_unsqueezed = labels.unsqueeze(-1)
+    labels_log_probs = all_log_probs.gather(dim=-1, index=labels_unsqueezed).squeeze(-1) # use gather to get the log-probs of the labels
 
+    result = {
+        "log_probs": labels_log_probs,
+    }
+    if return_token_entropy:
+        token_entropy = run_compute_entropy(logits)
+        result["token_entropy"] = token_entropy
+    return result
 
 def run_compute_naive_policy_gradient_loss(
     raw_rewards_or_advantages: torch.Tensor,
@@ -209,9 +268,20 @@ def run_sft_microbatch_train_step(
 ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
     """Compute the policy gradient loss and backprop its gradients for a microbatch.
     """
-    raise NotImplementedError
+    masked_log_probs = policy_log_probs * response_mask # shape: (batch_size, sequence_length)
 
-    
+    total_loss = -masked_log_probs.sum() / len(masked_log_probs) # get microbatch mean loss
+
+    if normalize_constant is not None:
+        total_loss = total_loss / normalize_constant # normalize by the constant
+
+    total_loss = total_loss / gradient_accumulation_steps # divide by the number of gradient accumulation steps
+
+    total_loss.backward()
+
+    detached_loss = total_loss.detach()
+    return detached_loss, {"loss": detached_loss}
+
 def run_grpo_microbatch_train_step(
     policy_log_probs: torch.Tensor,
     response_mask: torch.Tensor,
