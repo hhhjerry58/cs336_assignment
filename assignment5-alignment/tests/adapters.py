@@ -124,8 +124,29 @@ def run_compute_group_normalized_rewards(
                 You may choose what you wish to log here
                 (some statistics of the rewards, etc.).
     """
-    raise NotImplementedError
+    rewards = []
+    for rollout_response, repeated_ground_truth in zip (rollout_responses, repeated_ground_truths):
+        reward_dict = reward_fn(rollout_response, repeated_ground_truth)
+        current_reward = reward_dict["reward"]
+        rewards.append(current_reward)
+    rewards = torch.tensor(rewards, dtype=torch.float) # shape:(n_prompts_per_rollout_batch * group_size`)
+    
+    group_rewards = rewards.view(-1, group_size) # shape:(n_prompts_per_rollout_batch, group_size)
+    group_mean = group_rewards.mean(dim=1) # shape:(n_prompts_per_rollout_batch,)
+    group_std = group_rewards.std(dim=1)
 
+    if normalize_by_std:
+        final_rewards = (group_rewards - group_mean) / (group_std + advantage_eps)
+    else:
+        final_rewards = group_rewards - group_mean
+
+    final_rewards = final_rewards.view(-1) # transform into required shape (rollout_batch_size,)
+    
+    metadata = {
+        "group_mean": group_mean.tolist(),
+        "group_std": group_std.tolist()
+    }
+    return final_rewards, rewards, metadata
 
 def run_compute_entropy(logits: torch.Tensor) -> torch.Tensor:
     """Get the entropy of the logits (i.e., entropy of the final dimension)."""
