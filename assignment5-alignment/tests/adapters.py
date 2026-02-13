@@ -194,7 +194,8 @@ def run_compute_naive_policy_gradient_loss(
         torch.Tensor of shape (batch_size, sequence_length): 
             the policy gradient per-token loss.
     """
-    raise NotImplementedError
+    loss = -raw_rewards_or_advantages * policy_log_probs
+    return loss
 
 
 def run_compute_grpo_clip_loss(
@@ -221,7 +222,16 @@ def run_compute_grpo_clip_loss(
             dict[str, torch.Tensor]: metadata for the GRPO-Clip loss 
                 (used to compute clip fraction).
     """
-    raise NotImplementedError
+    ratio = torch.exp(policy_log_probs - old_log_probs)
+
+    surr1 = ratio * advantages
+    surr2 = torch.clamp(ratio, 1 - cliprange, 1 + cliprange) * advantages
+    loss = -torch.min(surr1, surr2)
+
+    metadata = {
+        "clip_fraction": (surr1 > surr2).float().mean()
+    }
+    return loss, metadata
 
 
 def run_compute_policy_gradient_loss(
@@ -235,7 +245,17 @@ def run_compute_policy_gradient_loss(
     """
     Wrapper that delegates to the appropriate policy gradient loss function above.
     """
-    raise NotImplementedError
+    if loss_type == "no_baseline":
+        loss = run_compute_naive_policy_gradient_loss(raw_rewards, policy_log_probs)
+    elif loss_type == "reinforce_with_baseline":
+        loss = run_compute_naive_policy_gradient_loss(advantages, policy_log_probs)
+    elif loss_type == "grpo_clip":
+        loss, _ = run_compute_grpo_clip_loss(advantages, policy_log_probs, old_log_probs, cliprange)
+
+    metadata = {
+        "loss_type": loss_type
+    }
+    return loss, metadata
 
 
 def run_masked_mean(tensor: torch.Tensor, mask: torch.Tensor, dim: int | None = None) -> torch.Tensor:
@@ -318,8 +338,15 @@ def run_grpo_microbatch_train_step(
         tuple[torch.Tensor, dict[str, torch.Tensor]]: 
             the policy gradient loss and its metadata.
     """
-    raise NotImplementedError
+    per_token_loss, metadata = run_compute_policy_gradient_loss(policy_log_probs, loss_type, raw_rewards, advantages, old_log_probs, cliprange)
 
+    per_token_loss = per_token_loss * response_mask
+    total_loss = per_token_loss.sum() / response_mask.sum()
+
+    total_loss = total_loss / gradient_accumulation_steps
+    total_loss.backward()
+    detached_loss = total_loss.detach()
+    return detached_loss, metadata
 
 def run_masked_normalize(
     tensor: torch.Tensor,
